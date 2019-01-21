@@ -111,7 +111,7 @@ def main():
             '#!/bin/bash\n',
             'sudo yum -y update\n',
             'sudo yum install -y httpd php\n',
-            'sudo sed - i "42s/Listen 80/Listen 8888/" / etc / httpd / conf / httpd.conf\n',
+            'sudo sed -i "42s/Listen 80/Listen 8888/" /etc/httpd/conf/httpd.conf\n',
             'sudo service httpd restart \n',
             'Ref(webport_param)',
     ]))))
@@ -127,7 +127,7 @@ def main():
         '#!/bin/bash\n',
         'sudo yum -y update\n',
         'sudo yum install -y httpd php\n',
-        'sudo sed - i "42s/Listen 80/Listen 8889/" / etc / httpd / conf / httpd.conf\n',
+        'sudo sed -i "42s/Listen 80/Listen 8889/" /etc/httpd/conf/httpd.conf\n',
         'sudo service httpd restart \n',
         'Ref(web2_param)',
     ]))))
