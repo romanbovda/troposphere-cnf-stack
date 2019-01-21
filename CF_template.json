@@ -1,0 +1,308 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation Sample Template: ELB with 2 EC2 instances",
+    "Mappings": {
+        "RegionMap": {
+            "eu-central-1": {
+                "AMI": "ami-034fffcc6a0063961"
+            },
+            "sa-east-1": {
+                "AMI": "ami-0112d42866980b373"
+            },
+            "us-east-1": {
+                "AMI": "ami-009d6802948d06e52"
+            },
+            "us-west-1": {
+                "AMI": "ami-011b6930a81cd6aaf"
+            },
+            "us-west-2": {
+                "AMI": "ami-011b6930a81cd6aaf"
+            }
+        }
+    },
+    "Outputs": {
+        "URL": {
+            "Description": "URL of the sample website",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "ApplicationElasticLB",
+                                "DNSName"
+                            ]
+                        }
+                    ]
+                ]
+            }
+        }
+    },
+    "Parameters": {
+        "ApiServerPort": {
+            "Default": "8889",
+            "Description": "TCP/IP port of the api server",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t1.micro",
+                "t2.micro"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.micro",
+            "Description": "WebServer EC2 instance type",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Default": "ansible-key",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "VpcId": {
+            "Description": "Choose VPC",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "WebServerPort": {
+            "Default": "8888",
+            "Description": "TCP/IP port of the web server",
+            "Type": "String"
+        },
+        "subnetA": {
+            "Description": "Choose Subnets",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        }
+    },
+    "Resources": {
+        "ApiInstance": {
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "RegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "InstanceSecurityGroup"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "sudo yum -y update\n",
+                                "sudo yum install -y httpd php\n",
+                                "sudo sed - i \"42s/Listen 80/Listen 8889/\" / etc / httpd / conf / httpd.conf\n",
+                                "sudo service httpd restart \n",
+                                "Ref(web2_param)"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Type": "AWS::EC2::Instance"
+        },
+        "ApplicationElasticLB": {
+            "Properties": {
+                "Name": "ApplicationElasticLB",
+                "Scheme": "internet-facing",
+                "Subnets": {
+                    "Ref": "subnetA"
+                }
+            },
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer"
+        },
+        "InstanceSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Enable SSH and HTTP access on the inbound port",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": {
+                            "Ref": "WebServerPort"
+                        },
+                        "IpProtocol": "tcp",
+                        "ToPort": {
+                            "Ref": "WebServerPort"
+                        }
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": {
+                            "Ref": "ApiServerPort"
+                        },
+                        "IpProtocol": "tcp",
+                        "ToPort": {
+                            "Ref": "ApiServerPort"
+                        }
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "Listener": {
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "TargetGroupArn": {
+                            "Ref": "TargetGroupWeb"
+                        },
+                        "Type": "forward"
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "ApplicationElasticLB"
+                },
+                "Port": "80",
+                "Protocol": "HTTP"
+            },
+            "Type": "AWS::ElasticLoadBalancingV2::Listener"
+        },
+        "ListenerRuleApi": {
+            "Properties": {
+                "Actions": [
+                    {
+                        "TargetGroupArn": {
+                            "Ref": "TargetGroupApi"
+                        },
+                        "Type": "forward"
+                    }
+                ],
+                "Conditions": [
+                    {
+                        "Field": "path-pattern",
+                        "Values": [
+                            "/api/*"
+                        ]
+                    }
+                ],
+                "ListenerArn": {
+                    "Ref": "Listener"
+                },
+                "Priority": "1"
+            },
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule"
+        },
+        "TargetGroupApi": {
+            "Properties": {
+                "HealthCheckIntervalSeconds": "30",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": "10",
+                "HealthyThresholdCount": "4",
+                "Matcher": {
+                    "HttpCode": "200"
+                },
+                "Name": "ApiTarget",
+                "Port": {
+                    "Ref": "ApiServerPort"
+                },
+                "Protocol": "HTTP",
+                "Targets": [
+                    {
+                        "Id": {
+                            "Ref": "ApiInstance"
+                        },
+                        "Port": {
+                            "Ref": "ApiServerPort"
+                        }
+                    }
+                ],
+                "UnhealthyThresholdCount": "3",
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup"
+        },
+        "TargetGroupWeb": {
+            "Properties": {
+                "HealthCheckIntervalSeconds": "30",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": "10",
+                "HealthyThresholdCount": "4",
+                "Matcher": {
+                    "HttpCode": "200"
+                },
+                "Name": "WebTarget",
+                "Port": {
+                    "Ref": "WebServerPort"
+                },
+                "Protocol": "HTTP",
+                "Targets": [
+                    {
+                        "Id": {
+                            "Ref": "WebInstance"
+                        },
+                        "Port": {
+                            "Ref": "WebServerPort"
+                        }
+                    }
+                ],
+                "UnhealthyThresholdCount": "3",
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup"
+        },
+        "WebInstance": {
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "RegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "InstanceSecurityGroup"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "sudo yum -y update\n",
+                                "sudo yum install -y httpd php\n",
+                                "sudo sed - i \"42s/Listen 80/Listen 8888/\" / etc / httpd / conf / httpd.conf\n",
+                                "sudo service httpd restart \n",
+                                "Ref(webport_param)"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Type": "AWS::EC2::Instance"
+        }
+    }
+}
